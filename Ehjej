@@ -1,0 +1,196 @@
+-- Blox Fruits Farm Level Script (English Version - Teleport, Auto-Interact, Aerial Attack)
+
+--// --- Libraries ---
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+--// --- UI Setup ---
+local Window = Fluent:CreateWindow({
+    Title = "HaZi Hub",
+    SubTitle = "Beta",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(530, 350),
+    Acrylic = true,
+    Theme = "Darker",
+    MinimizeKey = Enum.KeyCode.End
+})
+
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main", Icon = "home" }),
+    Setting = Window:AddTab({ Title = "Settings", Icon = "settings" }),
+}
+
+--// --- Global Variables ---
+local AutoFarm = false
+local AutoAcceptQuest = true
+local AttackDistance = 12
+
+--// --- Farming Variables ---
+local CurrentTarget = nil
+local BanditNPC = CFrame.new(1060.9383544922, 16.455066680908, 1547.7841796875)
+local BanditMobLocation = CFrame.new(1038.5533447266, 41.296249389648, 1576.5098876953)
+local BanditFolderName = "Bandits"
+
+--// --- Utility Functions ---
+
+-- Move Character (Teleport)
+local function MoveTo(destination)
+    local character = Players.LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") or not character:FindFirstChild("Humanoid") then return end
+    local humanoid = character.Humanoid
+    local rootPart = character.HumanoidRootPart
+    humanoid:ChangeState(Enum.HumanoidStateType.Flying)
+    rootPart.CFrame = destination * CFrame.new(0, 2, 0)
+end
+
+-- Find Nearest Bandit
+local function FindNearestBandit()
+    local character = Players.LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+    local rootPart = character.HumanoidRootPart
+    local closestBandit = nil
+    local closestDistance = math.huge
+    local banditFolder = workspace:FindFirstChild(BanditFolderName)
+    if banditFolder then
+        for _, mob in ipairs(banditFolder:GetChildren()) do
+            if mob:IsA("Model") and mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 then
+                local distance = (rootPart.Position - mob.HumanoidRootPart.Position).Magnitude
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestBandit = mob
+                end
+            end
+        end
+    end
+    return closestBandit
+end
+
+-- Simulate Touch Input for Attack (IMPORTANT: Needs the correct RemoteEvent)
+local function AttackWithTouch(target)
+    if not target or not target:FindFirstChild("HumanoidRootPart") then return end
+
+    local UpPos = target.HumanoidRootPart.Position + Vector3.new(0,AttackDistance,0)
+    MoveTo(CFrame.new(UpPos))
+    task.wait()
+    -- IMPORTANT: Replace "Melee" with the actual name of your attack event if different.
+    ReplicatedStorage.Remotes.CommF_:InvokeServer("Melee", target)
+
+end
+
+-- Simulate Touch for NPC interaction
+local function TouchNPC(npc)
+  if not npc or not npc:FindFirstChild("Head") then return end
+    MoveTo(npc.Head.CFrame * CFrame.new(0, 2, 2))
+    task.wait(0.5)
+    -- IMPORTANT:  YOU *MUST* REPLACE "InteractNPC" with the correct RemoteEvent name.
+    pcall(function()
+       ReplicatedStorage.Remotes.CommF_:InvokeServer("InteractNPC", npc.Head)
+     end)
+end
+
+-- Get Quest (Teleport and Touch NPC)
+local function GetQuest()
+    local character = Players.LocalPlayer.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        local npcModel = nil
+        for _, obj in pairs(workspace:GetChildren()) do
+            if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") then
+                if obj.HumanoidRootPart.CFrame == BanditNPC then
+                    npcModel = obj
+                    break
+                end
+            end
+        end
+
+        if npcModel then
+            TouchNPC(npcModel)
+            task.wait(0.5)
+        else
+            print("Error: Could not find Bandit NPC model.")
+        end
+    end
+end
+
+--// --- Farming Logic ---
+local function FarmLevel()
+    if AutoAcceptQuest then
+        GetQuest()
+    end
+
+    while AutoFarm do
+        if not CurrentTarget or not CurrentTarget.Parent then
+            CurrentTarget = FindNearestBandit()
+        end
+
+        if CurrentTarget then
+            AttackWithTouch(CurrentTarget)
+        else
+            MoveTo(BanditMobLocation * CFrame.new(0, 10, 0))
+        end
+        RunService.Heartbeat:Wait()
+    end
+end
+
+--// --- UI Elements ---
+local MainTab = Tabs.Main
+
+MainTab:AddButton({
+    Title = "Farm Level",
+    Description = "Toggles auto farming for your current level.",
+    Callback = function()
+        AutoFarm = not AutoFarm
+        if AutoFarm then
+            print("Auto Farm Started!")
+            FarmLevel()
+        else
+            print("Auto Farm Stopped!")
+            CurrentTarget = nil
+            if Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("Humanoid") then
+               Players.LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.None)
+            end
+        end
+    end
+})
+
+local SettingTab = Tabs.Setting
+
+SettingTab:AddSlider({
+    Title = "Attack Distance",
+    Description = "Adjust the distance from which to attack.",
+    Min = 5,
+    Max = 20,
+    Default = AttackDistance,
+    Callback = function(Value)
+        AttackDistance = Value
+        print("Attack Distance set to: " .. AttackDistance)
+    end
+})
+
+SettingTab:AddToggle({
+    Title = "Auto Accept Quest",
+    Description = "Automatically accepts quests from the NPC.",
+    Default = true,
+    Callback = function(Value)
+        AutoAcceptQuest = Value
+        print("Auto Accept Quest:", AutoAcceptQuest)
+    end
+})
+
+--// --- Keybind (Optional) ---
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.F and not gameProcessed then
+        local FarmButton = MainTab.Buttons.FarmLevel
+        if FarmButton then
+            FarmButton.Callback()
+        end
+    end
+end)
+
+--// --- Initialization ---
+repeat
+    task.wait()
+until Players.LocalPlayer and Players.LocalPlayer.Character and Players.LocalPlayer.Data and game:IsLoaded()
+print("Script loaded successfully!")
